@@ -9,9 +9,6 @@ DEFAULT_SCALE=1.75
 # Maximum backlight level (0-3)
 MAX_BACKLIGHT=3
 
-#Position based on whether monitors are attached or not. Default is that monitors are not connected
-POSITION=0
-
 # Capture Ctrl+C and close any subprocesses such as duo-watch-monitor
 trap 'echo "Ctrl+C captured. Exiting..."; pkill -P $$; exit 1' INT
 
@@ -240,6 +237,12 @@ function duo-check-monitor() {
     fi
     MONITOR_COUNT=$(kscreen-doctor -o | grep "enabled" | wc -l)
     duo-set-status
+
+    #Calculate POSITION based on monitor count
+    POSITION=0
+    if [[ "$MONITOR_COUNT" -ge 3 ]]; then
+        POSITION=1920
+    fi
 #    echo "$(date) - MONITOR - WIFI before: ${WIFI_BEFORE}, Bluetooth before: ${BLUETOOTH_BEFORE}"
 #    echo "$(date) - MONITOR - Keyboard attached: ${KEYBOARD_ATTACHED}, Monitor count: ${MONITOR_COUNT}"
     if [ ${KEYBOARD_ATTACHED} = true ]; then
@@ -260,6 +263,9 @@ function duo-check-monitor() {
 END
         if ((${MONITOR_COUNT} > 1)); then
             kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-2.disable
+	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc \
+  --group "Containments" --group "74" --key lastScreen 0
+	    plasmashell --replace &
             NEW_MONITOR_COUNT=$(kscreen-doctor -o | grep "enabled" | wc -l)
             if ((${NEW_MONITOR_COUNT} == 1)); then
                 MESSAGE="Disabled bottom display"
@@ -272,7 +278,11 @@ END
         echo "$(date) - MONITOR - Keyboard detached"
 
 	if (($MONITOR_COUNT == 1 )); then
-            kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-2.enable output.eDP-2.scale.${SCALE} output.eDP-2.position.${POSITION},1029 output.eDP-2.rotation.normal
+            kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-2.enable output.eDP-2.priority.2 output.eDP-2.scale.${SCALE} output.eDP-2.position.${POSITION},1029 output.eDP-2.rotation.normal
+
+	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc --group "Containments" --group "74" --key lastScreen 1
+	    plasmashell --replace &
+
             NEW_MONITOR_COUNT=$(kscreen-doctor -o | grep "enabled" | wc -l)
             if [[ "$MONITOR_COUNT" -ge 1 ]]; then
                 MESSAGE="Enabled bottom display"
@@ -281,7 +291,10 @@ END
             fi
             notify-send -a "Zenbook Duo" -t 1000 --hint=int:transient:1 -i "preferences-desktop-display" "${MESSAGE}"
 	else
-	    kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-2.enable output.eDP-2.scale.${SCALE} output.eDP-2.position.${POSITION},1029 output.eDP-2.rotation.normal
+	    kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-2.enable output.eDP-2.priority.2 output.eDP-2.scale.${SCALE} output.eDP-2.position.${POSITION},1029 output.eDP-2.rotation.normal
+
+	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc --group "Containments" --group "74" --key lastScreen 1
+	    plasmashell --replace &
             NEW_MONITOR_COUNT=$(kscreen-doctor -o | grep "enabled" | wc -l)
             if [[ "$MONITOR_COUNT" -ge 1 ]]; then
                 MESSAGE="Enabled bottom display"
@@ -295,10 +308,15 @@ END
 
 function duo-watch-monitor() {
     while true; do
-        echo "$(date) - MONITOR - Waiting for USB event"
+#Position based on whether monitors are attached or not. Default is that monitors are not connected
+        POSITION=0
+	echo "$(date) - MONITOR - Waiting for USB event"
         inotifywait -e attrib /dev/bus/usb/*/ >/dev/null 2>&1
 
-    	if [[ "$MONITOR_COUNT" -ge 2 ]]; then
+	# Update monitor count BEFORE checking it
+        MONITOR_COUNT=$(kscreen-doctor -o | grep "enabled" | wc -l)
+
+    	if [[ "$MONITOR_COUNT" -ge 3 ]]; then
 		POSITION=1920
     	fi	    
         duo-check-monitor
@@ -307,7 +325,7 @@ function duo-watch-monitor() {
 
 function duo-cli() {
     . /tmp/duo/status
-    if [[ "$MONITOR_COUNT" -ge 2 ]]; then
+    if [[ "$MONITOR_COUNT" -ge 3 ]]; then
 	    POSITION=1920
     fi	    
     case "${1}" in
@@ -335,7 +353,11 @@ function duo-cli() {
         if [ ${KEYBOARD_ATTACHED} = true ]; then
             kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-1.rotation.left
         else
-            kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-2.enable output.eDP-2.scale.${SCALE} output.eDP-1.rotation.left output.eDP-2.position.-1029,0 output.eDP-2.rotation.left
+            kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-2.enable output.eDP-2.priority.2 output.eDP-2.scale.${SCALE} output.eDP-1.rotation.left output.eDP-2.position.-1029,0 output.eDP-2.rotation.left
+
+	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc --group "Containments" --group "74" --key lastScreen 1
+	    plasmashell --replace &
+
         fi
 
         ;;
@@ -344,7 +366,11 @@ function duo-cli() {
         if [ ${KEYBOARD_ATTACHED} = true ]; then
             kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-1.rotate.right
         else
-            kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-1.rotate.right output.eDP-2.enable output.eDP-2.scale.${SCALE} output.eDP-2.position.rightof.eDP-1 output.eDP-2.rotate.right
+            kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-1.rotate.right output.eDP-2.enable output.eDP-2.priority.2 output.eDP-2.scale.${SCALE} output.eDP-2.position.rightof.eDP-1 output.eDP-2.rotate.right
+
+	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc --group "Containments" --group "74" --key lastScreen 1
+	    plasmashell --replace &
+
         fi
         ;;
     bottom-up)
@@ -352,15 +378,26 @@ function duo-cli() {
         if [ ${KEYBOARD_ATTACHED} = true ]; then
             kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-1.rotate.8
         else
-            kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-1.rotate.8 output.eDP-2.enable output.eDP-2.scale.${SCALE} output.eDP-2.position.above.eDP-1 output.eDP-2.rotate.8
+            kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-1.rotate.8 output.eDP-2.enable output.eDP-2.priority.2 output.eDP-2.scale.${SCALE} output.eDP-2.position.above.eDP-1 output.eDP-2.rotate.8
+
+	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc --group "Containments" --group "74" --key lastScreen 1
+	    plasmashell --replace &
+
         fi
         ;;
     normal)
         echo "$(date) - ROTATE - Normal"
         if [ ${KEYBOARD_ATTACHED} = true ]; then
             kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-1.rotation.normal output.eDP-2.disable
+	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc \
+  --group "Containments" --group "74" --key lastScreen 0
+	    plasmashell --replace &
         else
-            kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-1.rotation.normal output.eDP-2.enable output.eDP-2.scale.${SCALE} output.eDP-2.position.${POSITION},1029 output.eDP-2.rotation.normal output.eDP-1.rotation.normal
+            kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-1.rotation.normal output.eDP-2.enable output.eDP-2.priority.2 output.eDP-2.scale.${SCALE} output.eDP-2.position.${POSITION},1029 output.eDP-2.rotation.normal output.eDP-1.rotation.normal
+
+	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc --group "Containments" --group "74" --key lastScreen 1
+	    plasmashell --replace &
+
         fi
         ;;
     *)
