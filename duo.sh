@@ -1,3 +1,107 @@
+#!/bin/bash
+
+# Default backlight (0-3)
+DEFAULT_BACKLIGHT=0
+
+# Default scale (1-2)
+DEFAULT_SCALE=1.75
+
+# Maximum backlight level (0-3)
+MAX_BACKLIGHT=3
+
+#The bottom Plasmashell panel to shift to top screen, when bottom has keyboard attached.
+PANEL_ID=74
+
+# Capture Ctrl+C and close any subprocesses such as duo-watch-monitor
+trap 'echo "Ctrl+C captured. Exiting..."; pkill -P $$; exit 1' INT
+
+mkdir -p /tmp/duo
+
+# SCALE=$(gdctl show |grep Scale: |sed 's/│//g' |awk '{print $2}' |head -n1)
+# if [ -z "${SCALE}" ]; then
+#     SCALE=1
+# fi
+SCALE=1.75
+
+# Python embed
+PYTHON3=$(which python3)
+KEYBOARD_DEV=$(lsusb | grep 'Zenbook Duo Keyboard' |awk '{print $6}')
+if [ -n "${KEYBOARD_DEV}" ] && [ ! -f /tmp/duo/backlight.py ]; then
+    VENDOR_ID=${KEYBOARD_DEV%:*}
+    PRODUCT_ID=${KEYBOARD_DEV#*:}
+    echo "#!/usr/bin/env python3
+
+# BSD 2-Clause License
+#
+# Copyright (c) 2024, Alesya Huzik
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+import sys
+import usb.core
+import usb.util
+
+# USB Parameters
+VENDOR_ID = 0x${VENDOR_ID}
+PRODUCT_ID = 0x${PRODUCT_ID}
+REPORT_ID = 0x5A
+WVALUE = 0x035A
+WINDEX = 4
+WLENGTH = 16
+
+if len(sys.argv) != 2:
+    print(f\"Usage: {sys.argv[0]} <level>\")
+    sys.exit(1)
+
+try:
+    level = int(sys.argv[1])
+    if level < 0 or level > 3:
+        raise ValueError
+except ValueError:
+    print(\"Invalid level. Must be an integer between 0 and 3.\")
+    sys.exit(1)
+
+# Prepare the data packet
+data = [0] * WLENGTH
+data[0] = REPORT_ID
+data[1] = 0xBA
+data[2] = 0xC5
+data[3] = 0xC4
+data[4] = level
+
+# Find the device
+dev = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
+
+if dev is None:
+    print(f\"Device not found (Vendor ID: 0x{VENDOR_ID:04X}, Product ID: 0x{PRODUCT_ID:04X})\")
+    sys.exit(1)
+
+# Detach kernel driver if necessary
+if dev.is_kernel_driver_active(WINDEX):
+    try:
+        dev.detach_kernel_driver(WINDEX)
+    except usb.core.USBError as e:
+        print(f\"Could not detach kernel driver: {str(e)}\")
+        sys.exit(1)
 
 # try:
 #     dev.set_configuration()
@@ -162,9 +266,9 @@ function duo-check-monitor() {
 END
         if ((${MONITOR_COUNT} > 1)); then
             kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-2.disable
-	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc \
-  --group "Containments" --group "74" --key lastScreen 0
-	    plasmashell --replace &
+	    
+	    qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "var ps=panels(); for (var i=0;i<ps.length;i++){ if(ps[i].id==${PANEL_ID}){ ps[i].screen=0; }}"
+
             NEW_MONITOR_COUNT=$(kscreen-doctor -o | grep "enabled" | wc -l)
             if ((${NEW_MONITOR_COUNT} == 1)); then
                 MESSAGE="Disabled bottom display"
@@ -179,8 +283,7 @@ END
 	if (($MONITOR_COUNT == 1 )); then
             kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-2.enable output.eDP-2.priority.2 output.eDP-2.scale.${SCALE} output.eDP-2.position.${POSITION},1029 output.eDP-2.rotation.normal
 
-	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc --group "Containments" --group "74" --key lastScreen 1
-	    plasmashell --replace &
+	    qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "var ps=panels(); for (var i=0;i<ps.length;i++){ if(ps[i].id==${PANEL_ID}){ ps[i].screen=1; }}"
 
             NEW_MONITOR_COUNT=$(kscreen-doctor -o | grep "enabled" | wc -l)
             if [[ "$MONITOR_COUNT" -ge 1 ]]; then
@@ -192,8 +295,8 @@ END
 	else
 	    kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-2.enable output.eDP-2.priority.2 output.eDP-2.scale.${SCALE} output.eDP-2.position.${POSITION},1029 output.eDP-2.rotation.normal
 
-	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc --group "Containments" --group "74" --key lastScreen 1
-	    plasmashell --replace &
+	    qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "var ps=panels(); for (var i=0;i<ps.length;i++){ if(ps[i].id==${PANEL_ID}){ ps[i].screen=1; }}"
+
             NEW_MONITOR_COUNT=$(kscreen-doctor -o | grep "enabled" | wc -l)
             if [[ "$MONITOR_COUNT" -ge 1 ]]; then
                 MESSAGE="Enabled bottom display"
@@ -254,8 +357,7 @@ function duo-cli() {
         else
             kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-2.enable output.eDP-2.priority.2 output.eDP-2.scale.${SCALE} output.eDP-1.rotation.left output.eDP-2.position.-1029,0 output.eDP-2.rotation.left
 
-	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc --group "Containments" --group "74" --key lastScreen 1
-	    plasmashell --replace &
+	    qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "var ps=panels(); for (var i=0;i<ps.length;i++){ if(ps[i].id==${PANEL_ID}){ ps[i].screen=1; }}"
 
         fi
 
@@ -267,8 +369,7 @@ function duo-cli() {
         else
             kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-1.rotate.right output.eDP-2.enable output.eDP-2.priority.2 output.eDP-2.scale.${SCALE} output.eDP-2.position.rightof.eDP-1 output.eDP-2.rotate.right
 
-	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc --group "Containments" --group "74" --key lastScreen 1
-	    plasmashell --replace &
+	    qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "var ps=panels(); for (var i=0;i<ps.length;i++){ if(ps[i].id==${PANEL_ID}){ ps[i].screen=1; }}"
 
         fi
         ;;
@@ -279,8 +380,7 @@ function duo-cli() {
         else
             kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-1.rotate.8 output.eDP-2.enable output.eDP-2.priority.2 output.eDP-2.scale.${SCALE} output.eDP-2.position.above.eDP-1 output.eDP-2.rotate.8
 
-	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc --group "Containments" --group "74" --key lastScreen 1
-	    plasmashell --replace &
+	    qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "var ps=panels(); for (var i=0;i<ps.length;i++){ if(ps[i].id==${PANEL_ID}){ ps[i].screen=1; }}"
 
         fi
         ;;
@@ -288,14 +388,13 @@ function duo-cli() {
         echo "$(date) - ROTATE - Normal"
         if [ ${KEYBOARD_ATTACHED} = true ]; then
             kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-1.rotation.normal output.eDP-2.disable
-	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc \
-  --group "Containments" --group "74" --key lastScreen 0
-	    plasmashell --replace &
+
+	    qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "var ps=panels(); for (var i=0;i<ps.length;i++){ if(ps[i].id==${PANEL_ID}){ ps[i].screen=0; }}"
+
         else
             kscreen-doctor output.eDP-1.primary output.eDP-1.scale.${SCALE} output.eDP-1.rotation.normal output.eDP-2.enable output.eDP-2.priority.2 output.eDP-2.scale.${SCALE} output.eDP-2.position.${POSITION},1029 output.eDP-2.rotation.normal output.eDP-1.rotation.normal
 
-	    kwriteconfig6 --file ~/.config/plasma-org.kde.plasma.desktop-appletsrc --group "Containments" --group "74" --key lastScreen 1
-	    plasmashell --replace &
+	    qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "var ps=panels(); for (var i=0;i<ps.length;i++){ if(ps[i].id==${PANEL_ID}){ ps[i].screen=1; }}"
 
         fi
         ;;
@@ -331,4 +430,3 @@ else
         chmod a+w /tmp/duo /tmp/duo/duo.log /tmp/duo/status
     fi
 fi
-
